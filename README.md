@@ -21,21 +21,21 @@ Clone the repository to your local machine using the following command:
 
 ### 2 .env Backend
 
-MONGO_URI=mongodb+srv://username:<password>@cluster0.nugvn.mongodb.net/
-JWT_SECRET=your_super_secret_jwt_key_here
-JWT_EXPIRES_IN=3600
-EMAIL_HOST=smtp.gmail.com
-EMAIL_USER=user@gmail.com
-EMAIL_PASS=here shou ldbe keys
+- MONGO_URI=mongodb+srv://username:<password>@cluster0.nugvn.mongodb.net/
+- JWT_SECRET=your_super_secret_jwt_key_here
+- JWT_EXPIRES_IN=3600
+- EMAIL_HOST=smtp.gmail.com
+- EMAIL_USER=user@gmail.com
+- EMAIL_PASS=here shou ldbe keys
 
--Replace username:<password> in MONGO_URI with your MongoDB credentials.
--Set your own secret key in JWT_SECRET.
--Set the expiration time in JWT_EXPIRES_IN (in seconds).
--Update EMAIL_USER and EMAIL_PASS with your email credentials (ensure access to Gmail SMTP if using Gmail).
+- Replace username:<password> in MONGO_URI with your MongoDB credentials.
+- Set your own secret key in JWT_SECRET.
+- Set the expiration time in JWT_EXPIRES_IN (in seconds).
+- Update EMAIL_USER and EMAIL_PASS with your email credentials (ensure access to Gmail SMTP if using Gmail).
 
 ### 3 install dependencies
 
--npm install
+- npm install
 
 ### 4 start server
 
