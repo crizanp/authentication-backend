@@ -17,7 +17,7 @@ const sendVerificationEmail = async (email, verificationToken) => {
     }
   });
 
-  const verificationUrl = `http://localhost:3000/verify-email?token=${verificationToken}`;
+  const verificationUrl = `https://full-auth-system.vercel.app/verify-email?token=${verificationToken}`;
 
   await transporter.sendMail({
     from: process.env.EMAIL_USER,
