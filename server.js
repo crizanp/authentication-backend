@@ -10,7 +10,7 @@ connectDB();
 
 // Middleware
 app.use(cors({
-    origin: ['http://localhost:3000','http://localhost:3001'], // Your frontend URL
+    origin: ['http://localhost:3000','http://localhost:3001','https://full-auth-system.vercel.app'], 
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization']
 
