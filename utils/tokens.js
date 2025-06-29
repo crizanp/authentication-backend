@@ -9,7 +9,7 @@ exports.generateToken = (user) => {
       name: user.name
     },
     process.env.JWT_SECRET, 
-    { expiresIn: '7d' } // Longer expiration for "remember me"
+    { expiresIn: '3d' } // Longer expiration for "remember me"
   );
 };
 

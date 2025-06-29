@@ -156,12 +156,12 @@ router.post('/login', async (req, res) => {
         message: 'Please verify your email before logging in',
         email: user.email 
       });
-    }
+    }  
 
     // Generate JWT token with optional longer expiration
     const tokenOptions = rememberMe 
-      ? { expiresIn: '7d' }  // 7 days for "Remember Me"
-      : { expiresIn: '1h' }; // 1 hour for regular login
+      ? { expiresIn: '3d' }  // 7 days for "Remember Me"
+      : { expiresIn: '3h' }; // 1 hour for regular login
 
     const token = jwt.sign(
       { user: { id: user._id } },
