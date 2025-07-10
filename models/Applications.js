@@ -1,168 +1,368 @@
-const mongoose = require('mongoose');
+// models/Application.js
+const pool = require('../config/database');
 
-const ApplicationSchema = new mongoose.Schema({
-  // Reference to the user who submitted the application
-  userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true,
-    index: true // Single index declaration
-  },
- 
-  // Personal Details
-  fullName: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  email: {
-    type: String,
-    required: true,
-    lowercase: true,
-    trim: true
-  },
-  phone: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  address: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  dateOfBirth: {
-    type: Date,
-    required: true
-  },
-  nationality: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  passportNumber: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  experience: {
-    type: String,
-    required: true,
-    trim: true
-  },
- 
-  // Document Information (storing metadata and file references)
-  documents: {
-    passport: {
-      fileName: String,
-      fileType: String,
-      fileSize: Number,
-      uploadedAt: { type: Date, default: Date.now },
-      fileUrl: String, // If storing files separately
-      base64Data: String // If storing base64 in DB (not recommended for production)
-    },
-    photo: {
-      fileName: String,
-      fileType: String,
-      fileSize: Number,
-      uploadedAt: { type: Date, default: Date.now },
-      fileUrl: String,
-      base64Data: String
-    },
-    certificate: {
-      fileName: String,
-      fileType: String,
-      fileSize: Number,
-      uploadedAt: { type: Date, default: Date.now },
-      fileUrl: String,
-      base64Data: String
-    },
-    experience_letter: {
-      fileName: String,
-      fileType: String,
-      fileSize: Number,
-      uploadedAt: { type: Date, default: Date.now },
-      fileUrl: String,
-      base64Data: String
-    }
-  },
- 
-  // Agreement Acceptance
-  agreements: {
-    termsAccepted: {
-      type: Boolean,
-      required: true,
-      default: false
-    },
-    privacyAccepted: {
-      type: Boolean,
-      required: true,
-      default: false
-    },
-    dataProcessingAccepted: {
-      type: Boolean,
-      required: true,
-      default: false
-    },
-    acceptedAt: {
-      type: Date,
-      default: Date.now
-    }
-  },
- 
-  // Application Status
-  status: {
-    type: String,
-    enum: ['submitted', 'under_review', 'approved', 'rejected', 'pending_documents', 'withdrawn'],
-    default: 'submitted',
-    index: true // Single index declaration
-  },
- 
-  // Application Reference Number
-  applicationNumber: {
-    type: String,
-    unique: true // This creates an index automatically
-  },
- 
-  // Admin Notes
-  adminNotes: [{
-    note: String,
-    addedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    },
-    addedAt: {
-      type: Date,
-      default: Date.now
-    }
-  }],
- 
-  // Metadata
-  submittedAt: {
-    type: Date,
-    default: Date.now,
-    index: -1 // Single index declaration (descending order)
-  },
-  lastUpdated: {
-    type: Date,
-    default: Date.now
-  },
-  userAgent: String,
-  ipAddress: String
-});
+class Application {
+  static async create(applicationData) {
+    const {
+      userId,
+      fullName,
+      email,
+      phone,
+      whatsappNumber,
+      passportNumber,
+      documents,
+      agreements,
+      userAgent,
+      ipAddress
+    } = applicationData;
 
-// Generate application number before saving
-ApplicationSchema.pre('save', async function(next) {
-  if (this.isNew && !this.applicationNumber) {
-    const count = await mongoose.model('Application').countDocuments();
-    this.applicationNumber = `APP-${new Date().getFullYear()}-${String(count + 1).padStart(6, '0')}`;
+    // Generate application number
+    const applicationNumber = `APP-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+
+    const query = `
+      INSERT INTO applications (
+        user_id, application_number, full_name, email, phone, whatsapp_number,
+        address, date_of_birth, nationality, passport_number, experience,
+        documents, agreements, user_agent, ip_address
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      RETURNING *
+    `;
+
+    const values = [
+      userId,
+      applicationNumber,
+      fullName,
+      email,
+      phone,
+      whatsappNumber,
+      JSON.stringify({}),  // Empty object for address
+      null,                // null for date_of_birth
+      null,                // null for nationality
+      passportNumber,
+      null,                // null for experience
+      JSON.stringify(documents),
+      JSON.stringify(agreements),
+      userAgent,
+      ipAddress
+    ];
+
+    const result = await pool.query(query, values);
+    const application = result.rows[0];
+
+    // Parse JSON fields back to objects and normalize field names
+    const normalizedApplication = {
+      id: application.id,
+      _id: application.id,
+      userId: application.user_id,
+      applicationNumber: application.application_number,
+      fullName: application.full_name,
+      email: application.email,
+      phone: application.phone,
+      whatsappNumber: application.whatsapp_number,
+      passportNumber: application.passport_number,
+      documents: JSON.parse(application.documents),
+      agreements: JSON.parse(application.agreements),
+      status: application.status,
+      adminNotes: JSON.parse(application.admin_notes || '[]'),
+      userAgent: application.user_agent,
+      ipAddress: application.ip_address,
+      submittedAt: application.submitted_at,
+      updatedAt: application.updated_at,
+      createdAt: application.created_at
+    };
+    return normalizedApplication;
   }
-  this.lastUpdated = new Date();
-  next();
-});
 
-// Compound indexes for better query performance
-ApplicationSchema.index({ userId: 1, status: 1 });
-ApplicationSchema.index({ userId: 1, submittedAt: -1 });
+  static async findOne(conditions) {
+    let query = 'SELECT * FROM applications WHERE ';
+    const values = [];
+    const conditionParts = [];
+    let valueIndex = 1;
 
-module.exports = mongoose.model('Application', ApplicationSchema);
+    for (const [key, value] of Object.entries(conditions)) {
+      if (key === 'userId') {
+        conditionParts.push(`user_id = $${valueIndex}`);
+        values.push(value);
+        valueIndex++;
+      } else if (key === 'status') {
+        if (value.$in) {
+          const placeholders = value.$in.map(() => `$${valueIndex++}`).join(', ');
+          conditionParts.push(`status IN (${placeholders})`);
+          values.push(...value.$in);
+        } else {
+          conditionParts.push(`status = $${valueIndex}`);
+          values.push(value);
+          valueIndex++;
+        }
+      } else if (key === '_id' || key === 'id') {
+        conditionParts.push(`id = $${valueIndex}`);
+        values.push(value);
+        valueIndex++;
+      } else if (key === 'applicationNumber') {
+        conditionParts.push(`application_number = $${valueIndex}`);
+        values.push(value);
+        valueIndex++;
+      } else if (key === 'application_number') {
+        conditionParts.push(`application_number = $${valueIndex}`);
+        values.push(value);
+        valueIndex++;
+      }
+    }
+
+    if (conditionParts.length === 0) {
+      throw new Error('No valid conditions provided');
+    }
+
+    query += conditionParts.join(' AND ');
+
+    const result = await pool.query(query, values);
+    if (result.rows.length === 0) return null;
+
+    const application = result.rows[0];
+    
+    // Normalize field names for frontend compatibility
+    return {
+      id: application.id,
+      _id: application.id,
+      userId: application.user_id,
+      applicationNumber: application.application_number,
+      fullName: application.full_name,
+      email: application.email,
+      phone: application.phone,
+      whatsappNumber: application.whatsapp_number,
+      address: application.address ? JSON.parse(application.address) : null,
+      dateOfBirth: application.date_of_birth,
+      nationality: application.nationality,
+      passportNumber: application.passport_number,
+      experience: application.experience,
+      documents: JSON.parse(application.documents),
+      agreements: JSON.parse(application.agreements),
+      status: application.status,
+      adminNotes: JSON.parse(application.admin_notes || '[]'),
+      userAgent: application.user_agent,
+      ipAddress: application.ip_address,
+      submittedAt: application.submitted_at,
+      updatedAt: application.updated_at,
+      createdAt: application.created_at
+    };
+  }
+
+  static async find(conditions = {}) {
+    let query = 'SELECT * FROM applications';
+    const values = [];
+    let valueIndex = 1;
+
+    if (Object.keys(conditions).length > 0) {
+      query += ' WHERE ';
+      const conditionParts = [];
+
+      for (const [key, value] of Object.entries(conditions)) {
+        if (key === 'userId') {
+          conditionParts.push(`user_id = $${valueIndex}`);
+          values.push(value);
+          valueIndex++;
+        }
+      }
+
+      query += conditionParts.join(' AND ');
+    }
+
+    query += ' ORDER BY submitted_at DESC';
+
+    const result = await pool.query(query, values);
+
+    return result.rows.map(application => ({
+      id: application.id,
+      _id: application.id,
+      userId: application.user_id,
+      applicationNumber: application.application_number,
+      fullName: application.full_name,
+      email: application.email,
+      phone: application.phone,
+      whatsappNumber: application.whatsapp_number,
+      address: application.address ? JSON.parse(application.address) : null,
+      dateOfBirth: application.date_of_birth,
+      nationality: application.nationality,
+      passportNumber: application.passport_number,
+      experience: application.experience,
+      documents: JSON.parse(application.documents),
+      agreements: JSON.parse(application.agreements),
+      status: application.status,
+      adminNotes: JSON.parse(application.admin_notes || '[]'),
+      userAgent: application.user_agent,
+      ipAddress: application.ip_address,
+      submittedAt: application.submitted_at,
+      updatedAt: application.updated_at,
+      createdAt: application.created_at
+    }));
+  }
+
+  static async findById(id) {
+    if (!id || id === 'undefined') {
+      throw new Error('Invalid ID provided');
+    }
+
+    const query = 'SELECT * FROM applications WHERE id = $1';
+    const result = await pool.query(query, [id]);
+
+    if (result.rows.length === 0) return null;
+
+    const application = result.rows[0];
+    
+    return {
+      id: application.id,
+      _id: application.id,
+      userId: application.user_id,
+      applicationNumber: application.application_number,
+      fullName: application.full_name,
+      email: application.email,
+      phone: application.phone,
+      whatsappNumber: application.whatsapp_number,
+      address: application.address ? JSON.parse(application.address) : null,
+      dateOfBirth: application.date_of_birth,
+      nationality: application.nationality,
+      passportNumber: application.passport_number,
+      experience: application.experience,
+      documents: JSON.parse(application.documents),
+      agreements: JSON.parse(application.agreements),
+      status: application.status,
+      adminNotes: JSON.parse(application.admin_notes || '[]'),
+      userAgent: application.user_agent,
+      ipAddress: application.ip_address,
+      submittedAt: application.submitted_at,
+      updatedAt: application.updated_at,
+      createdAt: application.created_at
+    };
+  }
+
+  static async findByApplicationNumber(applicationNumber) {
+    if (!applicationNumber || applicationNumber === 'undefined') {
+      throw new Error('Invalid application number provided');
+    }
+
+    const query = 'SELECT * FROM applications WHERE application_number = $1';
+    const result = await pool.query(query, [applicationNumber]);
+
+    if (result.rows.length === 0) return null;
+
+    const application = result.rows[0];
+    
+    return {
+      id: application.id,
+      _id: application.id,
+      userId: application.user_id,
+      applicationNumber: application.application_number,
+      fullName: application.full_name,
+      email: application.email,
+      phone: application.phone,
+      whatsappNumber: application.whatsapp_number,
+      address: application.address ? JSON.parse(application.address) : null,
+      dateOfBirth: application.date_of_birth,
+      nationality: application.nationality,
+      passportNumber: application.passport_number,
+      experience: application.experience,
+      documents: JSON.parse(application.documents),
+      agreements: JSON.parse(application.agreements),
+      status: application.status,
+      adminNotes: JSON.parse(application.admin_notes || '[]'),
+      userAgent: application.user_agent,
+      ipAddress: application.ip_address,
+      submittedAt: application.submitted_at,
+      updatedAt: application.updated_at,
+      createdAt: application.created_at
+    };
+  }
+
+  static async updateById(id, updates) {
+    if (!id || id === 'undefined') {
+      throw new Error('Invalid ID provided');
+    }
+
+    const fields = Object.keys(updates);
+    const values = Object.values(updates);
+
+    // Convert objects to JSON strings for storage
+    const processedValues = values.map(value => {
+      if (typeof value === 'object' && value !== null) {
+        return JSON.stringify(value);
+      }
+      return value;
+    });
+
+    const setClause = fields.map((field, index) => {
+      // Map field names to database column names
+      const fieldMap = {
+        'adminNotes': 'admin_notes',
+        'userId': 'user_id',
+        'applicationNumber': 'application_number',
+        'fullName': 'full_name',
+        'whatsappNumber': 'whatsapp_number',
+        'dateOfBirth': 'date_of_birth',
+        'passportNumber': 'passport_number',
+        'userAgent': 'user_agent',
+        'ipAddress': 'ip_address',
+        'submittedAt': 'submitted_at',
+        'updatedAt': 'updated_at'
+      };
+
+      const dbField = fieldMap[field] || field;
+      return `${dbField} = $${index + 2}`;
+    }).join(', ');
+
+    const query = `
+      UPDATE applications 
+      SET ${setClause}, updated_at = NOW()
+      WHERE id = $1
+      RETURNING *
+    `;
+
+    const result = await pool.query(query, [id, ...processedValues]);
+
+    if (result.rows.length === 0) return null;
+
+    const application = result.rows[0];
+    
+    return {
+      id: application.id,
+      _id: application.id,
+      userId: application.user_id,
+      applicationNumber: application.application_number,
+      fullName: application.full_name,
+      email: application.email,
+      phone: application.phone,
+      whatsappNumber: application.whatsapp_number,
+      address: application.address ? JSON.parse(application.address) : null,
+      dateOfBirth: application.date_of_birth,
+      nationality: application.nationality,
+      passportNumber: application.passport_number,
+      experience: application.experience,
+      documents: JSON.parse(application.documents),
+      agreements: JSON.parse(application.agreements),
+      status: application.status,
+      adminNotes: JSON.parse(application.admin_notes || '[]'),
+      userAgent: application.user_agent,
+      ipAddress: application.ip_address,
+      submittedAt: application.submitted_at,
+      updatedAt: application.updated_at,
+      createdAt: application.created_at
+    };
+  }
+
+  static async save(applicationData) {
+    const {
+      id,
+      status,
+      admin_notes,
+      ...otherFields
+    } = applicationData;
+
+    const updates = {
+      status,
+      adminNotes: admin_notes
+    };
+
+    return await this.updateById(id, updates);
+  }
+}
+
+module.exports = Application;

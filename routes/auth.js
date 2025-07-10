@@ -1,7 +1,9 @@
+// routes/auth.js
+
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
-const crypto = require('crypto'); // Add this import
+const crypto = require('crypto');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
 const { generateToken, generateResetToken } = require('../utils/tokens');
@@ -36,25 +38,28 @@ router.post('/resend-verification-email', async (req, res) => {
   const { email } = req.body;
 
   try {
-    const user = await User.findOne({ email });
+    const user = await User.findByEmail(email);
     
     if (!user) {
       return res.status(404).json({ message: 'No user found with this email' });
     }
 
     // If user is already verified
-    if (user.isVerified) {
+    if (user.is_verified) {
       return res.status(400).json({ message: 'Email is already verified' });
     }
 
     // Generate new verification token
-    user.emailVerificationToken = crypto.randomBytes(32).toString('hex');
-    user.emailVerificationTokenExpires = Date.now() + 3600000; // 1 hour
+    const emailVerificationToken = crypto.randomBytes(32).toString('hex');
+    const emailVerificationTokenExpires = new Date(Date.now() + 3600000); // 1 hour
 
-    await user.save();
+    await User.updateById(user.id, {
+      email_verification_token: emailVerificationToken,
+      email_verification_token_expires: emailVerificationTokenExpires
+    });
 
     // Send new verification email
-    await sendVerificationEmail(email, user.emailVerificationToken);
+    await sendVerificationEmail(email, emailVerificationToken);
 
     res.json({ 
       message: 'Verification email resent. Please check your inbox.',
@@ -72,28 +77,26 @@ router.post('/signup', async (req, res) => {
 
   try {
     // Check if user already exists
-    let user = await User.findOne({ email });
-    if (user) {
+    const existingUser = await User.findByEmail(email);
+    if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Create new user
-    user = new User({ 
-      name, 
-      email, 
-      password,
-      emailVerificationToken: crypto.randomBytes(32).toString('hex'),
-      emailVerificationTokenExpires: Date.now() + 3600000 // 1 hour
-    });
-
     // Hash password
     const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(password, salt);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
-    await user.save();
+    // Create new user
+    const user = await User.create({
+      name,
+      email,
+      password: hashedPassword,
+      emailVerificationToken: crypto.randomBytes(32).toString('hex'),
+      emailVerificationTokenExpires: new Date(Date.now() + 3600000) // 1 hour
+    });
 
     // Send verification email
-    await sendVerificationEmail(email, user.emailVerificationToken);
+    await sendVerificationEmail(email, user.email_verification_token);
 
     res.status(201).json({ 
       message: 'Signup successful. Please check your email to verify your account.',
@@ -110,21 +113,11 @@ router.get('/verify-email', async (req, res) => {
   const { token } = req.query;
 
   try {
-    const user = await User.findOne({
-      emailVerificationToken: token,
-      emailVerificationTokenExpires: { $gt: Date.now() }
-    });
+    const user = await User.verifyEmail(token);
 
     if (!user) {
       return res.status(400).json({ message: 'Invalid or expired verification token' });
     }
-
-    // Mark user as verified
-    user.isVerified = true;
-    user.emailVerificationToken = undefined;
-    user.emailVerificationTokenExpires = undefined;
-
-    await user.save();
 
     res.json({ message: 'Email verified successfully' });
   } catch (err) {
@@ -139,7 +132,7 @@ router.post('/login', async (req, res) => {
 
   try {
     // Check if user exists
-    const user = await User.findOne({ email });
+    const user = await User.findByEmail(email);
     if (!user) {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
@@ -151,7 +144,7 @@ router.post('/login', async (req, res) => {
     }
 
     // Check email verification
-    if (!user.isVerified) {
+    if (!user.is_verified) {
       return res.status(403).json({ 
         message: 'Please verify your email before logging in',
         email: user.email 
@@ -160,11 +153,11 @@ router.post('/login', async (req, res) => {
 
     // Generate JWT token with optional longer expiration
     const tokenOptions = rememberMe 
-      ? { expiresIn: '3d' }  // 7 days for "Remember Me"
-      : { expiresIn: '3h' }; // 1 hour for regular login
+      ? { expiresIn: '7d' }  // 7 days for "Remember Me"
+      : { expiresIn: '1h' }; // 1 hour for regular login
 
     const token = jwt.sign(
-      { user: { id: user._id } },
+      { user: { id: user.id } },
       process.env.JWT_SECRET, 
       tokenOptions
     );
@@ -179,8 +172,14 @@ router.post('/login', async (req, res) => {
 // @route   GET /api/auth/me
 router.get('/me', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password');
-    res.json(user);
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Remove password from response
+    const { password, ...userWithoutPassword } = user;
+    res.json(userWithoutPassword);
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ message: 'Server error' });
@@ -192,13 +191,15 @@ router.put('/update-profile', auth, async (req, res) => {
   const { name } = req.body;
 
   try {
-    const user = await User.findByIdAndUpdate(
-      req.user.id,
-      { name },
-      { new: true }
-    ).select('-password');
+    const user = await User.updateById(req.user.id, { name });
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
 
-    res.json(user);
+    // Remove password from response
+    const { password, ...userWithoutPassword } = user;
+    res.json(userWithoutPassword);
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ message: 'Server error' });
@@ -211,6 +212,9 @@ router.put('/change-password', auth, async (req, res) => {
 
   try {
     const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
 
     // Check current password
     const isMatch = await bcrypt.compare(currentPassword, user.password);
@@ -220,9 +224,9 @@ router.put('/change-password', auth, async (req, res) => {
 
     // Hash new password
     const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(newPassword, salt);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-    await user.save();
+    await User.updatePassword(user.id, hashedPassword);
 
     res.json({ message: 'Password updated successfully' });
   } catch (err) {
@@ -236,17 +240,19 @@ router.post('/forgot-password', async (req, res) => {
   const { email } = req.body;
 
   try {
-    const user = await User.findOne({ email });
+    const user = await User.findByEmail(email);
     if (!user) {
       return res.status(404).json({ message: 'No user found with this email' });
     }
 
     // Generate reset token
     const resetToken = generateResetToken();
-    user.resetPasswordToken = resetToken;
-    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour from now
+    const resetTokenExpires = new Date(Date.now() + 3600000); // 1 hour from now
 
-    await user.save();
+    await User.updateById(user.id, {
+      reset_password_token: resetToken,
+      reset_password_expires: resetTokenExpires
+    });
 
     // Send reset email
     const transporter = nodemailer.createTransport({
@@ -267,6 +273,7 @@ router.post('/forgot-password', async (req, res) => {
         <p>You requested a password reset</p>
         <p>Click this link to reset your password:</p>
         <a href="${resetUrl}">${resetUrl}</a>
+        <p>This link will expire in 1 hour.</p>
       `
     });
 
@@ -282,10 +289,7 @@ router.post('/reset-password', async (req, res) => {
   const { token, password } = req.body;
 
   try {
-    const user = await User.findOne({
-      resetPasswordToken: token,
-      resetPasswordExpires: { $gt: Date.now() }
-    });
+    const user = await User.findByResetToken(token);
 
     if (!user) {
       return res.status(400).json({ message: 'Invalid or expired reset token' });
@@ -293,11 +297,10 @@ router.post('/reset-password', async (req, res) => {
 
     // Hash new password
     const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(password, salt);
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpires = undefined;
+    const hashedPassword = await bcrypt.hash(password, salt);
 
-    await user.save();
+    // Update password and clear reset token
+    await User.updatePassword(user.id, hashedPassword);
 
     res.json({ message: 'Password reset successful' });
   } catch (err) {
@@ -311,10 +314,7 @@ router.get('/validate-reset-token', async (req, res) => {
   const { token } = req.query;
 
   try {
-    const user = await User.findOne({
-      resetPasswordToken: token,
-      resetPasswordExpires: { $gt: Date.now() }
-    });
+    const user = await User.findByResetToken(token);
 
     if (!user) {
       return res.status(400).json({ message: 'Invalid or expired reset token' });

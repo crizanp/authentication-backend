@@ -1,12 +1,14 @@
+// server.js
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const connectDB = require('./config/db');
+const createTables = require('./config/initDB'); // Add this
 
 const app = express();
 
 // Connect Database
-connectDB();
+createTables(); // Add this line
 
 // Middleware
 app.use(cors({
