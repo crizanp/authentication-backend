@@ -7,15 +7,53 @@ const auth = require('../middleware/auth');
 const nodemailer = require('nodemailer');
 
 // Helper function to send confirmation email
+// Helper function to send confirmation email - FIXED VERSION
 const sendApplicationConfirmationEmail = async (email, applicationNumber, fullName) => {
   try {
-    const transporter = nodemailer.createTransporter({
+    // Add validation for required parameters
+    if (!email || !applicationNumber || !fullName) {
+      console.error('Missing required parameters for email sending:', { email, applicationNumber, fullName });
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      console.error('Invalid email format:', email);
+      return;
+    }
+
+    // Check if required environment variables are set
+    if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      console.error('Missing email configuration environment variables');
+      console.error('EMAIL_HOST:', process.env.EMAIL_HOST ? 'Set' : 'Not set');
+      console.error('EMAIL_USER:', process.env.EMAIL_USER ? 'Set' : 'Not set');
+      console.error('EMAIL_PASS:', process.env.EMAIL_PASS ? 'Set' : 'Not set');
+      return;
+    }
+
+    console.log('Attempting to send email to:', email);
+
+    // Create transporter with more detailed configuration
+    const transporter = nodemailer.createTransport({
       host: process.env.EMAIL_HOST,
+      port: process.env.EMAIL_PORT || 587, // Default to 587 for STARTTLS
+      secure: process.env.EMAIL_SECURE === 'true', // true for 465, false for other ports
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
-      }
+      },
+      // Add these options for better compatibility
+      tls: {
+        rejectUnauthorized: false // Only use this in development
+      },
+      debug: process.env.NODE_ENV === 'development', // Enable debug in development
+      logger: process.env.NODE_ENV === 'development' // Enable logging in development
     });
+
+    // Test the connection before sending
+    await transporter.verify();
+    console.log('SMTP connection verified successfully');
 
     const htmlContent = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -39,16 +77,38 @@ const sendApplicationConfirmationEmail = async (email, applicationNumber, fullNa
       </div>
     `;
 
-    await transporter.sendMail({
+    const mailOptions = {
       from: process.env.EMAIL_USER,
       to: email,
       subject: `Application Confirmation - ${applicationNumber}`,
       html: htmlContent
+    };
+
+    console.log('Sending email with options:', {
+      from: mailOptions.from,
+      to: mailOptions.to,
+      subject: mailOptions.subject
     });
 
-    console.log(`Confirmation email sent to ${email}`);
+    const result = await transporter.sendMail(mailOptions);
+    console.log(`Confirmation email sent successfully to ${email}`, result.messageId);
+    
+    return result;
+
   } catch (error) {
-    console.error('Error sending confirmation email:', error);
+    console.error('Detailed error sending confirmation email:', {
+      error: error.message,
+      code: error.code,
+      command: error.command,
+      response: error.response,
+      responseCode: error.responseCode
+    });
+    
+    // Don't throw the error to prevent breaking the application submission
+    // but log it for debugging
+    if (process.env.NODE_ENV === 'development') {
+      console.error('Full error object:', error);
+    }
   }
 };
 
@@ -219,7 +279,13 @@ router.post('/', auth, async (req, res) => {
     const application = await Application.create(applicationData);
 
     // Send confirmation email (async, don't wait for it)
-    sendApplicationConfirmationEmail(email, application.applicationNumber, fullName);
+ try {
+      await sendApplicationConfirmationEmail(email, application.applicationNumber, fullName);
+      console.log('Email sent successfully');
+    } catch (emailError) {
+      console.error('Email sending failed but application was created:', emailError);
+      // Don't fail the entire request if email fails
+    }
 
     res.status(201).json({
       success: true,
