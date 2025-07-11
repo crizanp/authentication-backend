@@ -15,10 +15,31 @@ const createTables = async () => {
         email_verification_token_expires TIMESTAMP,
         reset_password_token VARCHAR(255),
         reset_password_expires TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        phone VARCHAR(50),
+        address TEXT,
+        date_of_birth DATE,
+        nationality VARCHAR(100),
+        emergency_contact VARCHAR(255),
+        emergency_phone VARCHAR(50),
+        bio TEXT,
+        profile_photo TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `);
+    `);    console.log('Users table created successfully');
 
+    await pool.query(`
+  ALTER TABLE users 
+  ADD COLUMN IF NOT EXISTS phone VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS address TEXT,
+  ADD COLUMN IF NOT EXISTS date_of_birth DATE,
+  ADD COLUMN IF NOT EXISTS nationality VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS emergency_contact VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS emergency_phone VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS bio TEXT,
+  ADD COLUMN IF NOT EXISTS profile_photo TEXT,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+`);
     // Create applications table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS applications (

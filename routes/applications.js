@@ -89,7 +89,8 @@ router.post('/', auth, async (req, res) => {
       'arrival',
       'agreement_paper',
       'passport_back',
-      'departure'
+      'departure',
+      'payment_proof'
     ];
 
     const missingDocuments = requiredDocuments.filter(docType => !documents[docType]);
@@ -169,7 +170,8 @@ router.post('/', auth, async (req, res) => {
       'passport_back',
       'previous_visa',
       'departure',
-      'further_info'
+      'further_info',
+      'payment_proof'
     ];
     for (const docType of documentTypes) {
       if (documents[docType]) {
@@ -325,7 +327,8 @@ router.put('/:id', auth, async (req, res) => {
       'arrival',
       'agreement_paper',
       'passport_back',
-      'departure'
+      'departure',
+      'payment_proof'
     ];
 
     const missingDocuments = requiredDocuments.filter(docType => !documents[docType]);
@@ -379,7 +382,8 @@ router.put('/:id', auth, async (req, res) => {
       'passport_back',
       'previous_visa',
       'departure',
-      'further_info'
+      'further_info',
+      'payment_proof'
     ];
 
     for (const docType of documentTypes) {
@@ -667,7 +671,8 @@ router.get('/:id/download/:documentType', auth, async (req, res) => {
       'passport_back',
       'previous_visa',
       'departure',
-      'further_info'
+      'further_info',
+      'payment_proof'
     ];
 
     if (!applicationId || applicationId === 'undefined') {
