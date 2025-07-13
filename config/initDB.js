@@ -62,26 +62,27 @@ const createTables = async () => {
     console.log('Admins table created successfully');
 
     await pool.query(`
-      CREATE TABLE IF NOT EXISTS applications (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        application_number VARCHAR(255) UNIQUE NOT NULL,
-        full_name VARCHAR(255) NOT NULL,
-        email VARCHAR(255) NOT NULL,
-        phone VARCHAR(50) NOT NULL,
-        whatsapp_number VARCHAR(50),
-        passport_number VARCHAR(100) NOT NULL,
-        documents TEXT NOT NULL,
-        agreements TEXT NOT NULL,
-        status VARCHAR(50) DEFAULT 'submitted',
-        admin_notes TEXT DEFAULT '[]',
-        user_agent TEXT,
-        ip_address VARCHAR(45),
-        submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
+  CREATE TABLE IF NOT EXISTS applications (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    application_number VARCHAR(255) UNIQUE NOT NULL,
+    full_name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    phone VARCHAR(50) NOT NULL,
+    whatsapp_number VARCHAR(50),
+    passport_number VARCHAR(100) NOT NULL,
+    address TEXT,  -- Add this line
+    documents TEXT NOT NULL,
+    agreements TEXT NOT NULL,
+    status VARCHAR(50) DEFAULT 'submitted',
+    admin_notes TEXT DEFAULT '[]',
+    user_agent TEXT,
+    ip_address VARCHAR(45),
+    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  )
+`);
 
     console.log('Applications table created successfully');
 
@@ -122,47 +123,47 @@ const createTables = async () => {
 
     if (existingSuperAdmin.rows.length === 0) {
       console.log('Creating initial superadmin...');
-      
+
       const saltRounds = 12;
       const hashedPassword = await bcrypt.hash('admin123', saltRounds);
-      
+
       console.log('🔍 Generated hash for admin123:', hashedPassword.substring(0, 20) + '...');
-      
+
       await pool.query(`
         INSERT INTO admins (username, password, role, email, full_name) 
         VALUES ($1, $2, 'superadmin', $3, $4)
       `, ['superadmin', hashedPassword, 'superadmin@example.com', 'Super Administrator']);
-      
+
       console.log('✅ Initial superadmin created with username: superadmin, password: admin123');
       console.log('⚠️  Please change the default password after first login!');
-      
+
       const testMatch = await bcrypt.compare('admin123', hashedPassword);
       console.log('🔍 Hash verification test:', testMatch ? 'PASSED' : 'FAILED');
     } else {
       console.log('Superadmin already exists');
-      
+
       const existingAdmin = await pool.query(`
         SELECT password FROM admins WHERE username = 'superadmin' LIMIT 1
       `);
-      
+
       if (existingAdmin.rows.length > 0) {
         const existingHash = existingAdmin.rows[0].password;
         console.log('🔍 Existing hash:', existingHash.substring(0, 20) + '...');
-        
+
         const testMatch = await bcrypt.compare('admin123', existingHash);
         console.log('🔍 Existing hash verification test:', testMatch ? 'PASSED' : 'FAILED');
-        
+
         if (!testMatch) {
           console.log('🔄 Updating superadmin password hash...');
           const saltRounds = 12;
           const newHashedPassword = await bcrypt.hash('admin123', saltRounds);
-          
+
           await pool.query(`
             UPDATE admins SET password = $1 WHERE username = 'superadmin'
           `, [newHashedPassword]);
-          
+
           console.log('✅ Superadmin password hash updated');
-          
+
           const newTestMatch = await bcrypt.compare('admin123', newHashedPassword);
           console.log('🔍 New hash verification test:', newTestMatch ? 'PASSED' : 'FAILED');
         }
