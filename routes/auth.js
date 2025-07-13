@@ -42,7 +42,7 @@ const sendVerificationEmail = async (email, verificationToken) => {
   try {
     const transporter = createTransporter();
     
-    const verificationUrl = `http://localhost:3000/verify-email?token=${verificationToken}`;
+    const verificationUrl = `https://portal.nepalishram.com/verify-email?token=${verificationToken}`;
 
     const mailOptions = {
       from: `"Nepali Shram" <${process.env.EMAIL_USER}>`, // Better sender format
@@ -87,7 +87,7 @@ const sendPasswordResetEmail = async (email, resetToken) => {
   try {
     const transporter = createTransporter();
     
-    const resetUrl = `http://localhost:3000/reset-password?token=${resetToken}`;
+    const resetUrl = `https://portal.nepalishram.com/reset-password?token=${resetToken}`;
 
     const mailOptions = {
       from: `"Nepali Shram" <${process.env.EMAIL_USER}>`,
