@@ -85,10 +85,14 @@ const createTables = async () => {
 `);
 
     console.log('Applications table created successfully');
-
+await pool.query(`
+  ALTER TABLE applications
+  ADD COLUMN IF NOT EXISTS address TEXT
+`);
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_applications_user_id ON applications(user_id)
     `);
+
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status)
     `);
