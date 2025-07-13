@@ -71,7 +71,11 @@ const createTables = async () => {
     phone VARCHAR(50) NOT NULL,
     whatsapp_number VARCHAR(50),
     passport_number VARCHAR(100) NOT NULL,
-    address TEXT,  -- Add this line
+    address TEXT,
+    user_phone VARCHAR(50),
+    nationality VARCHAR(100),
+    experience TEXT,
+    date_of_birth DATE,
     documents TEXT NOT NULL,
     agreements TEXT NOT NULL,
     status VARCHAR(50) DEFAULT 'submitted',
@@ -85,10 +89,18 @@ const createTables = async () => {
 `);
 
     console.log('Applications table created successfully');
-await pool.query(`
-  ALTER TABLE applications
-  ADD COLUMN IF NOT EXISTS address TEXT
-`);
+    
+    // Add new columns if they don't exist
+    await pool.query(`
+      ALTER TABLE applications
+      ADD COLUMN IF NOT EXISTS address TEXT,
+      ADD COLUMN IF NOT EXISTS user_phone VARCHAR(50),
+      ADD COLUMN IF NOT EXISTS nationality VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS experience TEXT,
+      ADD COLUMN IF NOT EXISTS date_of_birth DATE
+    `);
+
+    // Create indexes
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_applications_user_id ON applications(user_id)
     `);
