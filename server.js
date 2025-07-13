@@ -8,7 +8,7 @@ const app = express();
 createTables();
 
 app.use(cors({
-    origin: ['http://localhost:3000', 'http://localhost:3001', 'https://full-auth-system.vercel.app','portal.nepalishram.com'],
+    origin: ['http://localhost:3000', 'http://localhost:3001', 'https://full-auth-system.vercel.app','https://portal.nepalishram.com'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
