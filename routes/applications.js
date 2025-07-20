@@ -145,11 +145,6 @@ router.post('/', auth, async (req, res) => {
 
     const requiredDocuments = [
       'passport_front',
-      'labor_visa_front',
-      'arrival',
-      'agreement_paper',
-      'passport_back',
-      'departure',
       'payment_proof'
     ];
 
@@ -389,11 +384,7 @@ router.put('/:id', auth, async (req, res) => {
 
     const requiredDocuments = [
       'passport_front',
-      'labor_visa_front',
-      'arrival',
-      'agreement_paper',
-      'passport_back',
-      'departure',
+      
       'payment_proof'
     ];
 
