@@ -4,6 +4,77 @@ const router = express.Router();
 const { adminAuth } = require('../middleware/adminAuth');
 const pool = require('../config/database');
 
+// @route   GET /api/admin/dashboard/stats
+// @desc    Get dashboard statistics
+// @access  Private (Admin)
+router.get('/stats', adminAuth, async (req, res) => {
+  try {
+    console.log('📊 Stats endpoint hit by admin:', req.admin?.username);
+    
+    // Get application statistics
+    const applicationStats = await pool.query(`
+      SELECT 
+        COUNT(*) as total_applications,
+        COUNT(CASE WHEN status = 'submitted' THEN 1 END) as submitted_applications,
+        COUNT(CASE WHEN status = 'under_review' THEN 1 END) as under_review_applications,
+        COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved_applications,
+        COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected_applications,
+        COUNT(CASE WHEN DATE(submitted_at) = CURRENT_DATE THEN 1 END) as todays_applications,
+        COUNT(CASE WHEN submitted_at >= CURRENT_DATE - INTERVAL '7 days' THEN 1 END) as weekly_applications,
+        COUNT(CASE WHEN submitted_at >= CURRENT_DATE - INTERVAL '30 days' THEN 1 END) as monthly_applications
+      FROM applications
+    `);
+
+    // Get user statistics
+    const userStats = await pool.query(`
+      SELECT 
+        COUNT(*) as total_users,
+        COUNT(CASE WHEN is_verified = true THEN 1 END) as verified_users,
+        COUNT(CASE WHEN is_verified = false THEN 1 END) as unverified_users,
+        COUNT(CASE WHEN DATE(created_at) = CURRENT_DATE THEN 1 END) as todays_registrations,
+        COUNT(CASE WHEN created_at >= CURRENT_DATE - INTERVAL '7 days' THEN 1 END) as weekly_registrations,
+        COUNT(CASE WHEN created_at >= CURRENT_DATE - INTERVAL '30 days' THEN 1 END) as monthly_registrations
+      FROM users
+    `);
+
+    // Get recent applications
+    const recentApplications = await pool.query(`
+      SELECT 
+        a.id,
+        a.application_number,
+        a.full_name,
+        a.email,
+        a.status,
+        a.submitted_at,
+        u.name as user_name
+      FROM applications a
+      JOIN users u ON a.user_id = u.id
+      ORDER BY a.submitted_at DESC
+      LIMIT 10
+    `);
+
+    const response = {
+      applicationStats: applicationStats.rows[0],
+      userStats: userStats.rows[0],
+      recentApplications: recentApplications.rows
+    };
+
+    console.log('✅ Stats response prepared:', {
+      totalApps: response.applicationStats.total_applications,
+      totalUsers: response.userStats.total_users,
+      recentAppsCount: response.recentApplications.length
+    });
+
+    res.json(response);
+  } catch (err) {
+    console.error('❌ Get dashboard stats error:', err);
+    res.status(500).json({ 
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? err.message : 'Database error'
+    });
+  }
+});
+
 // @route   GET /api/admin/dashboard/applications
 // @desc    Get all applications with pagination and filtering
 // @access  Private (Admin)
@@ -121,64 +192,6 @@ router.get('/applications', adminAuth, async (req, res) => {
       message: 'Server error',
       error: process.env.NODE_ENV === 'development' ? err.message : 'Database error'
     });
-  }
-});
-
-// @route   GET /api/admin/dashboard/stats
-// @desc    Get dashboard statistics
-// @access  Private (Admin)
-router.get('/stats', adminAuth, async (req, res) => {
-  try {
-    // Get application statistics
-    const applicationStats = await pool.query(`
-      SELECT 
-        COUNT(*) as total_applications,
-        COUNT(CASE WHEN status = 'submitted' THEN 1 END) as submitted_applications,
-        COUNT(CASE WHEN status = 'under_review' THEN 1 END) as under_review_applications,
-        COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved_applications,
-        COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected_applications,
-        COUNT(CASE WHEN DATE(submitted_at) = CURRENT_DATE THEN 1 END) as todays_applications,
-        COUNT(CASE WHEN submitted_at >= CURRENT_DATE - INTERVAL '7 days' THEN 1 END) as weekly_applications,
-        COUNT(CASE WHEN submitted_at >= CURRENT_DATE - INTERVAL '30 days' THEN 1 END) as monthly_applications
-      FROM applications
-    `);
-
-    // Get user statistics
-    const userStats = await pool.query(`
-      SELECT 
-        COUNT(*) as total_users,
-        COUNT(CASE WHEN is_verified = true THEN 1 END) as verified_users,
-        COUNT(CASE WHEN is_verified = false THEN 1 END) as unverified_users,
-        COUNT(CASE WHEN DATE(created_at) = CURRENT_DATE THEN 1 END) as todays_registrations,
-        COUNT(CASE WHEN created_at >= CURRENT_DATE - INTERVAL '7 days' THEN 1 END) as weekly_registrations,
-        COUNT(CASE WHEN created_at >= CURRENT_DATE - INTERVAL '30 days' THEN 1 END) as monthly_registrations
-      FROM users
-    `);
-
-    // Get recent applications
-    const recentApplications = await pool.query(`
-      SELECT 
-        a.id,
-        a.application_number,
-        a.full_name,
-        a.email,
-        a.status,
-        a.submitted_at,
-        u.name as user_name
-      FROM applications a
-      JOIN users u ON a.user_id = u.id
-      ORDER BY a.submitted_at DESC
-      LIMIT 10
-    `);
-
-    res.json({
-      applicationStats: applicationStats.rows[0],
-      userStats: userStats.rows[0],
-      recentApplications: recentApplications.rows
-    });
-  } catch (err) {
-    console.error('Get dashboard stats error:', err);
-    res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -350,10 +363,12 @@ router.get('/users', adminAuth, async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
-// @route   DELETE /api/admin/applications/:id
+
+// Move DELETE route to the end to avoid conflicts
+// @route   DELETE /api/admin/dashboard/application/:id
 // @desc    Delete an application
 // @access  Private (Admin)
-router.delete('/:id', adminAuth, async (req, res) => {
+router.delete('/application/:id', adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -381,4 +396,5 @@ router.delete('/:id', adminAuth, async (req, res) => {
     });
   }
 });
+
 module.exports = router;
