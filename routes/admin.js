@@ -7,6 +7,8 @@ const jwt = require('jsonwebtoken');
 const Admin = require('../models/Admin');
 const { adminAuth, superAdminAuth } = require('../middleware/adminAuth');
 const { body, validationResult } = require('express-validator');
+const pool = require('../config/database'); // Adjust path as needed
+
 
 
 router.post('/login', [
@@ -463,6 +465,252 @@ router.get('/stats', adminAuth, async (req, res) => {
 // @access  Private (Admin)
 router.post('/logout', adminAuth, (req, res) => {
   res.json({ message: 'Logout successful' });
+});
+
+// @route   GET /api/admin/users
+// @desc    Get all users with pagination and filtering
+// @access  Private (Admin)
+router.get('/users', adminAuth, async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      verified = 'all',
+      search = '',
+      sortBy = 'created_at',
+      sortOrder = 'DESC'
+    } = req.query;
+
+    console.log('📋 Get users request:', { page, limit, verified, search, sortBy, sortOrder });
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    
+    // Build where conditions
+    const whereConditions = [];
+    const queryParams = [];
+    let paramIndex = 1;
+
+    // Verification filter
+    if (verified !== 'all') {
+      whereConditions.push(`is_verified = $${paramIndex}`);
+      queryParams.push(verified === 'true');
+      paramIndex++;
+    }
+
+    // Search filter
+    if (search.trim()) {
+      whereConditions.push(`(
+        LOWER(name) LIKE LOWER($${paramIndex}) OR 
+        LOWER(email) LIKE LOWER($${paramIndex}) OR 
+        phone LIKE $${paramIndex}
+      )`);
+      queryParams.push(`%${search.trim()}%`);
+      paramIndex++;
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    // Build ORDER BY clause
+    const validSortColumns = ['created_at', 'name', 'email', 'is_verified'];
+    const validSortOrders = ['ASC', 'DESC'];
+    
+    const orderColumn = validSortColumns.includes(sortBy) ? sortBy : 'created_at';
+    const orderDirection = validSortOrders.includes(sortOrder.toUpperCase()) ? sortOrder.toUpperCase() : 'DESC';
+
+    // Get total count
+    const countQuery = `SELECT COUNT(*) as total FROM users ${whereClause}`;
+    const countResult = await pool.query(countQuery, queryParams);
+    const totalUsers = parseInt(countResult.rows[0].total);
+
+    // Get users
+    const usersQuery = `
+      SELECT id, name, email, phone, is_verified, created_at, updated_at 
+      FROM users 
+      ${whereClause}
+      ORDER BY ${orderColumn} ${orderDirection}
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `;
+    
+    queryParams.push(parseInt(limit), offset);
+    
+    console.log('📊 Users query:', usersQuery);
+    console.log('📊 Query params:', queryParams);
+
+    const usersResult = await pool.query(usersQuery, queryParams);
+
+    const totalPages = Math.ceil(totalUsers / parseInt(limit));
+    const currentPage = parseInt(page);
+
+    res.json({
+      users: usersResult.rows,
+      pagination: {
+        currentPage,
+        totalPages,
+        totalUsers,
+        hasNextPage: currentPage < totalPages,
+        hasPrevPage: currentPage > 1
+      }
+    });
+
+  } catch (err) {
+    console.error('❌ Get users error:', err);
+    res.status(500).json({ 
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
+// Move the bulk-delete route BEFORE the single user delete route
+// This ensures the more specific route is matched first
+
+// @route   DELETE /api/admin/users/bulk-delete
+// @desc    Delete multiple users
+// @access  Private (Admin)
+router.delete('/users/bulk-delete', adminAuth, async (req, res) => {
+  try {
+    const { userIds } = req.body;
+    console.log('🗑️ Bulk deleting users:', userIds);
+
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ message: 'User IDs array is required' });
+    }
+
+    // Validate that all IDs are numbers
+    const validIds = userIds.filter(id => Number.isInteger(Number(id)));
+    if (validIds.length !== userIds.length) {
+      return res.status(400).json({ message: 'Invalid user IDs provided' });
+    }
+
+    // Create placeholders for the IN clause
+    const placeholders = validIds.map((_, index) => `$${index + 1}`).join(', ');
+    
+    // Check how many users exist
+    const checkQuery = `SELECT COUNT(*) as count FROM users WHERE id IN (${placeholders})`;
+    const checkResult = await pool.query(checkQuery, validIds);
+    const existingCount = parseInt(checkResult.rows[0].count);
+
+    if (existingCount === 0) {
+      return res.status(404).json({ message: 'No users found with provided IDs' });
+    }
+
+    // Delete users
+    const deleteQuery = `DELETE FROM users WHERE id IN (${placeholders}) RETURNING id, name, email`;
+    const deleteResult = await pool.query(deleteQuery, validIds);
+
+    console.log('✅ Bulk delete completed:', {
+      requested: userIds.length,
+      found: existingCount,
+      deleted: deleteResult.rows.length
+    });
+
+    res.json({
+      message: `${deleteResult.rows.length} users deleted successfully`,
+      deletedCount: deleteResult.rows.length,
+      deletedUsers: deleteResult.rows
+    });
+
+  } catch (err) {
+    console.error('❌ Bulk delete users error:', err);
+    res.status(500).json({ 
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
+// @route   DELETE /api/admin/users/:id
+// @desc    Delete a single user
+// @access  Private (Admin)
+// THIS ROUTE MUST COME AFTER THE BULK-DELETE ROUTE
+router.delete('/users/:id', adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log('🗑️ Deleting user with ID:', id);
+
+    // Validate that id is a number
+    if (!Number.isInteger(Number(id))) {
+      return res.status(400).json({ message: 'Invalid user ID' });
+    }
+
+    // Check if user exists
+    const checkQuery = 'SELECT id, name, email FROM users WHERE id = $1';
+    const checkResult = await pool.query(checkQuery, [id]);
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Delete user (this will cascade delete applications if foreign key is set up)
+    const deleteQuery = 'DELETE FROM users WHERE id = $1 RETURNING id, name, email';
+    const deleteResult = await pool.query(deleteQuery, [id]);
+
+    console.log('✅ User deleted:', deleteResult.rows[0]);
+
+    res.json({
+      message: 'User deleted successfully',
+      deletedUser: deleteResult.rows[0]
+    });
+
+  } catch (err) {
+    console.error('❌ Delete user error:', err);
+    res.status(500).json({ 
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+// @route   PUT /api/admin/users/:id/verify
+// @desc    Update user verification status
+// @access  Private (Admin)
+router.put('/users/:id/verify', adminAuth, [
+  body('verified').isBoolean().withMessage('Verified must be a boolean value')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        message: 'Validation failed', 
+        errors: errors.array() 
+      });
+    }
+
+    const { id } = req.params;
+    const { verified } = req.body;
+
+    console.log('🔄 Updating verification status:', { id, verified });
+
+    // Check if user exists
+    const checkQuery = 'SELECT id, name, email, is_verified FROM users WHERE id = $1';
+    const checkResult = await pool.query(checkQuery, [id]);
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Update verification status
+    const updateQuery = `
+      UPDATE users 
+      SET is_verified = $1, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = $2 
+      RETURNING id, name, email, is_verified, updated_at
+    `;
+    const updateResult = await pool.query(updateQuery, [verified, id]);
+
+    console.log('✅ User verification updated:', updateResult.rows[0]);
+
+    res.json({
+      message: `User ${verified ? 'verified' : 'unverified'} successfully`,
+      user: updateResult.rows[0]
+    });
+
+  } catch (err) {
+    console.error('❌ Update verification error:', err);
+    res.status(500).json({ 
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
 });
 
 module.exports = router;

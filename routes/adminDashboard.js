@@ -350,5 +350,35 @@ router.get('/users', adminAuth, async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
-
+// @route   DELETE /api/admin/applications/:id
+// @desc    Delete an application
+// @access  Private (Admin)
+router.delete('/:id', adminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Check if application exists
+    const checkQuery = 'SELECT id, application_number FROM applications WHERE id = $1';
+    const checkResult = await pool.query(checkQuery, [id]);
+    
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Application not found' });
+    }
+    
+    // Delete the application
+    const deleteQuery = 'DELETE FROM applications WHERE id = $1';
+    await pool.query(deleteQuery, [id]);
+    
+    res.json({ 
+      message: 'Application deleted successfully',
+      deletedId: id 
+    });
+  } catch (error) {
+    console.error('Error deleting application:', error);
+    res.status(500).json({
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Database error'
+    });
+  }
+});
 module.exports = router;
